@@ -269,7 +269,10 @@ install_supervised() {
   local deb="/tmp/homeassistant-supervised.deb"
   yellow "Téléchargement du package supervised-installer (dernier) …"
   curl -fL -o "$deb" "https://github.com/home-assistant/supervised-installer/releases/latest/download/homeassistant-supervised.deb"
-
+ 
+  # Dépendance obligatoire pour Home Assistant supervised
+  apt-get install -y systemd-journal-remote || true
+  
   local machine; machine="$(pick_machine)"
 
   yellow "Installation Home Assistant Supervised (MACHINE=${machine})…"
