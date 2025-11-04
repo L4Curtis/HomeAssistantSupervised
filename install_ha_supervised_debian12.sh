@@ -93,8 +93,7 @@ prompt_network() {
     if [[ -z "${DNS:-}"  ]]; then read -rp "DNS (liste séparée par des virgules, ex 192.168.10.1,1.1.1.1): " DNS; fi
   else
     MODE="dhcp"
-    # En DHCP, si DNS précisé par l'utilisateur, on forcera ces DNS (ignore-auto-dns yes).
-    # Sinon, on laisse le DNS fourni par le DHCP.
+    # En DHCP, si DNS spécifié par l'utilisateur, on forcera ces DNS.
   fi
 }
 
@@ -174,23 +173,18 @@ apply_network_nmcli() {
 
 validate_dns_strict() {
   yellow "Validation stricte du DNS…"
-  # resolvectl doit répondre
   if ! resolvectl status >/dev/null 2>&1; then
     red "systemd-resolved ne répond pas. Pas de fallback : corrige la config DNS/NetworkManager."
     exit 1
   fi
 
-  # Si l'utilisateur a fourni un DNS, on vérifie qu'il est bien pris par resolved
   if [[ -n "${DNS:-}" ]]; then
-    # Normalise les DNS utilisateur (espaces)
     local dns_expected; dns_expected="$(echo "$DNS" | tr ',' ' ' | xargs)"
-    local dns_seen; dns_seen="$(resolvectl status | awk '/DNS Servers:/{print $3,$4,$5,$6,$7,$8,$9,$10}' | xargs)"
-
-    # Test très simple : chaque DNS attendu doit apparaître dans la liste vue par resolved
+    local dns_seen; dns_seen="$(resolvectl status | awk '/DNS Servers:/{for (i=3;i<=NF;i++) printf $i" "; print ""}' | xargs)"
     for d in $dns_expected; do
       if ! grep -qw "$d" <<<"$dns_seen"; then
         red "Le DNS '$d' n'est pas utilisé par systemd-resolved (vu: $dns_seen)."
-        red "Aucun fallback appliqué. Corrige manuellement (nmcli) et relance."
+        red "Aucun fallback appliqué. Corrige (nmcli) et relance."
         exit 1
       fi
     done
@@ -235,7 +229,7 @@ install_os_agent() {
   local url="https://github.com/home-assistant/os-agent/releases/download/${ver}/os-agent_${ver}_${suffix}.deb"
   local deb="/tmp/os-agent_${ver}_${suffix}.deb"
 
-  if busctl introspect --system io.hass.os /io/hass/os >/div/null 2>&1; then
+  if busctl introspect --system io.hass.os /io/hass/os >/dev/null 2>&1; then
     green "OS Agent déjà en place (io.hass.os)."
     return
   fi
@@ -269,11 +263,13 @@ install_supervised() {
   local deb="/tmp/homeassistant-supervised.deb"
   yellow "Téléchargement du package supervised-installer (dernier) …"
   curl -fL -o "$deb" "https://github.com/home-assistant/supervised-installer/releases/latest/download/homeassistant-supervised.deb"
- 
-  # Dépendance obligatoire pour Home Assistant supervised
-  apt-get install -y systemd-journal-remote || true
-  
+
   local machine; machine="$(pick_machine)"
+
+  # Dépendance obligatoire signalée par dpkg (évite l'erreur vue à l'étape 5)
+  yellow "Installation de la pré-dépendance systemd-journal-remote…"
+  apt-get update -y
+  DEBIAN_FRONTEND=noninteractive apt-get install -y systemd-journal-remote
 
   yellow "Installation Home Assistant Supervised (MACHINE=${machine})…"
   if [[ -n "${DATA_SHARE:-}" ]]; then
